@@ -74,7 +74,7 @@ BokoboxSrc::BokoboxSrc(Filter& filter) : BokoboxSrc(PIN_NOT_ASSIGNED, PIN_NOT_AS
 }
 
 BokoboxSrc::BokoboxSrc(uint8_t perform_pin, uint8_t volume_pin, Filter& filter)
-    : VoiceCapture(filter),
+    : SoundCapture(filter),
       active_level_(kDefaultActiveThresh),
       is_button_enable_(perform_pin != PIN_NOT_ASSIGNED ? true : false),
       perform_note_(INVALID_NOTE_NUMBER),
@@ -116,7 +116,7 @@ bool BokoboxSrc::isAvailable(int param_id) {
     } else if (param_id == BokoboxSrc::PARAMID_MONITOR_ENABLE) {
         return true;
     } else {
-        return VoiceCapture::isAvailable(param_id);
+        return SoundCapture::isAvailable(param_id);
     }
 }
 
@@ -142,7 +142,7 @@ intptr_t BokoboxSrc::getParam(int param_id) {
     } else if (param_id == BokoboxSrc::PARAMID_MONITOR_ENABLE) {
         return is_monitor_enable_;
     } else {
-        return VoiceCapture::getParam(param_id);
+        return SoundCapture::getParam(param_id);
     }
 }
 
@@ -171,7 +171,7 @@ bool BokoboxSrc::setParam(int param_id, intptr_t value) {
         }
         is_monitor_enable_ = value;
     } else {
-        return VoiceCapture::setParam(param_id, value);
+        return SoundCapture::setParam(param_id, value);
     }
     return true;
 }
@@ -185,111 +185,24 @@ void BokoboxSrc::setActiveLevel(int active_level) {
     return;
 }
 
-void BokoboxSrc::onCapture(unsigned int freq_numer, unsigned int freq_denom, unsigned int volume) {
-    bool button = true;
-    uint8_t note = INVALID_NOTE_NUMBER;
+void BokoboxSrc::onCapture(unsigned int freq_numer, unsigned int freq_denom, unsigned int volume, unsigned int volume2) {
 
-    level_meter_ = volume;
-    ledOn(LED2);
-
-    trace_printf("[%s::%s] freq:%d, volume:%d\n", kClassName, __func__, freq_numer * 10 / freq_denom, volume);
-    uint8_t lookup_note = lookupNote(freq_numer * 10 / freq_denom);
-    note = lingerNote(lookup_note, volume);
-    if (is_monitor_enable_) {
-        unsigned int note_freq = 0;
-        if (note != INVALID_NOTE_NUMBER) {
-            for (const auto& e : g_freq2note) {
-                if (e.note == note) {
-                    note_freq = e.freq;
-                    break;
-                }
-            }
-        }
-        printf("%d %d %d %d %d\n",                   //
-               (int)(millis() % 1000),               //
-               (int)(freq_numer * 10 / freq_denom),  //
-               (int)note_freq,                       //
-               (int)(volume / 2),                    //
-               (int)(active_level_ / 2)              //
-        );                                           //
+    float max_power=volume;
+    int c=0;
+    if(max_power<volume2){
+        max_power=volume2;
+        c=1;
     }
 
-    if (is_button_enable_ && perform_pin_ != PIN_NOT_ASSIGNED) {
-        button = (digitalRead(perform_pin_) == LOW);
-        if (!button) {
-            note = INVALID_NOTE_NUMBER;
-        }
-    } else {
-        button = true;
-    }
-
-    if (note != perform_note_) {
-        if (volume_pin_ != PIN_NOT_ASSIGNED) {
-            int dial = (analogRead(volume_pin_) >> 2) & 0xFF;  // 10bit (0 to 1023) -> 8bit (0 to 255)
-            int pos = dial * 100 / 0xFF;                       // 0 to 100%
-            struct level_dia {
-                int pos;    //< 0 to 100
-                int level;  //< -1020(-102.0dB) to +120(+12.0dB)
-            };
-#if 0    //
-            const struct level_dia lut[] = {
-                {0, -800},  // 0% = -80.0dB
-                {50, 0},    // 50% = 0.0dB
-                {100, 120}   // 100% = +12.0dB
-            };
-#elif 0  //
-            const struct level_dia lut[] = {
-                {0, -400},  // 0% = -40.0dB
-                {50, 0},    // 50% = 0.0dB
-                {100, 60}   // 100% = +6.0dB
-            };
-#elif 1  //
-            const struct level_dia lut[] = {
-                {0, -780},   // 0% = -78.0dB
-                {20, -300},  // 20% = -30.0dB
-                {50, 0},     // 50% = 0.0dB
-                {100, 120}   // 100% = +12.0dB
-            };
-#else
-#error select monitor level dia
-#endif
-            int monitor_volume = 0;
-            const struct level_dia* lo = nullptr;
-            for (const auto& hi : lut) {
-                if (lo != nullptr) {
-                    if (lo->pos <= pos && pos <= hi.pos) {
-                        int pos_range = hi.pos - lo->pos;
-                        int level_range = hi.level - lo->level;
-                        int delta_pos = pos - lo->pos;
-                        monitor_volume = lo->level + delta_pos * level_range / pos_range;
-                        break;
-                    }
-                }
-                lo = &hi;
-            }
-            if (monitor_volume != monitor_volume_) {
-                OutputMixer::getInstance()->setVolume(0, monitor_volume, 0);  // -1020(-102.0dB) to +120(+12.0dB)
-                monitor_volume_ = monitor_volume;
-            }
-            debug_printf("[%s::%s] dial=%d/255, volume=%d\n", kClassName, __func__, dial, monitor_volume);
-        }
-        // if (perform_note_ != INVALID_NOTE_NUMBER) {
-        //     sendNoteOff(perform_note_, DEFAULT_VELOCITY, DEFAULT_CHANNEL);
-        // }
-        // if (note != INVALID_NOTE_NUMBER) {
-        //     sendNoteOn(note, DEFAULT_VELOCITY, DEFAULT_CHANNEL);
-        // }
-        perform_note_ = note;
-
-    }
-
-    if(volume>10){
-        if(volume>100){
+    if(max_power>0){
+        if(max_power>120){
+            uint8_t vel = (uint8_t)max(127, 127 * (max_power - 80) / 120);
             sendNoteOn(60, DEFAULT_VELOCITY, DEFAULT_CHANNEL);
-            printf("A %d\n", volume);
+            printf("%d:A %d %d\n", c, volume, volume2);
         } else {
+            uint8_t vel = (uint8_t)max(127, 127 * max_power / 120);
             sendNoteOn(61, DEFAULT_VELOCITY, DEFAULT_CHANNEL);
-            printf("B %d\n", volume);
+            printf("%d:A %d %d\n", c, volume, volume2);
         }
     }
     ledOff(LED2);

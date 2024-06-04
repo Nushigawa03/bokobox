@@ -39,7 +39,7 @@ File myFile;
 const char* FileList[] = {"AUDIO/drum1.wav", "AUDIO/drum2.wav"};
 
 /* Setting audio parameters */
-static const int32_t channel_num  = AS_CHANNEL_MONO;
+static const int32_t channel_num  = 2;
 static const int32_t bit_length   = AS_BITLENGTH_16;
 static const int32_t frame_sample = 256;
 static const int32_t capture_size = frame_sample * (bit_length / 8) * channel_num;

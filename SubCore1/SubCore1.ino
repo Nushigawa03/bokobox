@@ -10,7 +10,7 @@
 
 #include <MP.h>
 
-#include <VoiceCapture.h>
+#include "SoundCapture.h"
 
 #if SUBCORE != SUB_CORE_ID
 #error "Core selection is wrong!!"
@@ -22,14 +22,17 @@
 #include <arm_math.h>
 
 #include "RingBuff.h"
+#include "FFT.h"
 
 // Select FFT length
 // #define FFTLEN 512
 #define FFTLEN 1024
+#define MAX_CHANNEL_NUM 2
 
 // Ring buffer
-#define INPUT_BUFFER (1024 * 4)
+#define INPUT_BUFFER (1024 * 16)
 RingBuff ringbuf(INPUT_BUFFER);
+FFTClass<MAX_CHANNEL_NUM, FFTLEN> FFT;
 
 // Allocate the larger heap size than default
 USER_HEAP_SIZE(64 * 1024);
@@ -127,6 +130,8 @@ void setup() {
             break;
         }
     }
+    
+    FFT.begin();
 
     MPLog("setup done\n");
 }
@@ -135,7 +140,7 @@ void loop() {
     uint16_t input_level = 0;
 
     int8_t rcvid = -1;
-    VoiceCapture::Capture *capture = nullptr;
+    SoundCapture::Capture *capture = nullptr;
     int ret = 0;
 
     ret = MP.Recv(&rcvid, &capture);
@@ -151,26 +156,28 @@ void loop() {
         MPLog("received invalid data\n", rcvid);
         return;
     }
+    if (ret >= 0) {
+        FFT.put((q15_t*)capture->data,(capture->size)/4);
+    }
 
     ledOn(LED1);
-    input_level = analyzeVolume((int16_t *)capture->data, CAP_FRAME_LENGTH);
-    input_level = (uint16_t)getPower(BOTTOM_BAND, TOP_BAND, pDst);
     ringbuf.put((q15_t *)capture->data, CAP_FRAME_LENGTH);
+    
+    // printf("%d %d %d\n", !FFT.empty(0), !FFT.empty(1), ringbuf.stored() >= FFTLEN);
 
+    // while (!FFT.empty(1)) {
     while (ringbuf.stored() >= FFTLEN) {
         float peak = fftProcessing();
-        static VoiceCapture::Result result = {0, 0, 0, 0, 0, 0};
+        static SoundCapture::Result result = {0, 0, 0, 0, 0, 0, 0};
 
         result.id = capture->id;
-        result.freq_numer = peak * capture->fs;
+        result.freq_numer = 100 * capture->fs;
         result.freq_denom = CAP_SAMPLING_FREQ;
 
-        if (VOICE_VOLUME < input_level) {
-            result.volume = input_level;
-        } else {
-            result.freq_numer = 0.0f;
-            result.volume = 0;
-        }
+        FFT.get(pDst,0);
+        result.volume = getPower(BOTTOM_BAND, TOP_BAND, pDst);
+        FFT.get(pDst,1);
+        result.volume2 = getPower(BOTTOM_BAND, TOP_BAND, pDst);
 
         result.capture_time = capture->capture_time;
         result.result_time = millis();
@@ -183,7 +190,6 @@ void loop() {
                   result.volume,                                                         // volume
                   result.result_time);                                                   // result_time
         }
-
         MP.Send(MSGID_SEND_RESULT, &result);
     }
     ledOff(LED1);

@@ -37,8 +37,8 @@
 //#define FFT_LEN 4096
 
 /* Number of channels*/
-#define MAX_CHANNEL_NUM 1
-//#define MAX_CHANNEL_NUM 2
+// #define MAX_CHANNEL_NUM 1
+#define MAX_CHANNEL_NUM 2
 // #define MAX_CHANNEL_NUM 4
 
 #define SAMPLING_RATE   48000 // ex.) 48000, 16000
@@ -128,6 +128,7 @@ void loop()
   if (ret >= 0) {
       FFT.put((q15_t*)request->buffer,request->sample);
   }
+  printf("%d: help\n", request->sample);
 
   while(!FFT.empty(0)){
       result[pos].channel = MAX_CHANNEL_NUM;

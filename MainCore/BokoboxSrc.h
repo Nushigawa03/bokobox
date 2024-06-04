@@ -13,13 +13,13 @@
 #include <vector>
 
 #include "YuruInstrumentFilter.h"
-#include "VoiceCapture.h"
+#include "SoundCapture.h"
 
 /**
  * @brief @~japanese マイクに入力された音と同じ高さのノート・オンを送信する楽器部品です。
- * @see VoiceCapture
+ * @see SoundCapture
  */
-class BokoboxSrc : public VoiceCapture {
+class BokoboxSrc : public SoundCapture {
 public:
     enum ParamId {  // MAGIC CHAR = 'Y'
         /**
@@ -110,7 +110,7 @@ public:
     void setActiveLevel(int active_level);
 
 protected:
-    void onCapture(unsigned int freq_numer, unsigned int freq_denom, unsigned int volume) override;
+    void onCapture(unsigned int freq_numer, unsigned int freq_denom, unsigned int volume, unsigned int volume2) override;
 
 private:
     int active_level_;

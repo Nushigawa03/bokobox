@@ -11,12 +11,16 @@
 #error "Core selection is wrong!!"
 #endif
 
+// #include <OctaveShift.h>
+// #include <SFZSink.h>
 #include <SDSink.h>
-// #include <YuruhornSrc.h>
 #include "BokoboxSrc.h"
 
+// SFZSink sink("Bokobox.sfz");
+// OctaveShift filter(sink);
+// BokoboxSrc inst(filter);
 
-// this file names are deifned middle C (60) as C4
+
 const SDSink::Item table[2] = {
     {60, "AUDIO/drum1.wav"}, {61, "AUDIO/drum2.wav"},  //< C4, C#3
 };
@@ -33,6 +37,7 @@ void setup() {
     pinMode(LED3, OUTPUT);
 
     // setup instrument
+    // printf("A\n");
     if (!inst.begin()) {
         Serial.println("ERROR: init error.");
         while (true) {
@@ -46,4 +51,5 @@ void setup() {
 void loop() {
     // run instrument
     inst.update();
+    // printf("%d: help\n", 1);
 }
