@@ -19,7 +19,7 @@
 
 #include <MP.h>
 
-#include "FFT.h"
+#include "GetPower.h"
 
 /*-----------------------------------------------------------------*/
 /*
@@ -27,43 +27,34 @@
  */
 /* Select FFT length */
 
-//#define FFT_LEN 32
-//#define FFT_LEN 64
-//#define FFT_LEN 128
-//#define FFT_LEN 256
-//#define FFT_LEN 512
-#define FFT_LEN 1024
-//#define FFT_LEN 2048
-//#define FFT_LEN 4096
-
 /* Number of channels*/
-// #define MAX_CHANNEL_NUM 1
-#define MAX_CHANNEL_NUM 2
-// #define MAX_CHANNEL_NUM 4
+//#define MAX_CHANNEL_NUM 1
+//#define MAX_CHANNEL_NUM 2
+#define MAX_CHANNEL_NUM 4
 
 #define SAMPLING_RATE   48000 // ex.) 48000, 16000
 
-#define FFT_LEN         1024 // ex.) 128, 256, 1024
-#define OVERLAP         (FFT_LEN/2)  // ex.) 0, 128, 256
+#define SIGNAL_LEN          1024 // ex.) 128, 256, 1024
+#define OVERLAP             0  // ex.) 0, 128, 256
 
-FFTClass<MAX_CHANNEL_NUM, FFT_LEN> FFT;
+GetPowerClass<MAX_CHANNEL_NUM, SIGNAL_LEN > GetPower;
 
 /*-----------------------------------------------------------------*/
 /*
  * Detector parameters
  */
-#define POWER_THRESHOLD       10  //30  // Power
-#define LENGTH_THRESHOLD      10  //30  // 20ms
+#define POWER_THRESHOLD       3  // Power
+#define LENGTH_THRESHOLD      20  // 20ms
 #define INTERVAL_THRESHOLD    100 // 100ms
 
-#define BOTTOM_SAMPLING_RATE  100 // 1kHz
+#define BOTTOM_SAMPLING_RATE  0 // 1kHz
 #define TOP_SAMPLING_RATE     1000 // 1.5kHz
 
-#define FS2BAND(x)            ((x)*FFT_LEN/SAMPLING_RATE)
+#define FS2BAND(x)            ((x)*SIGNAL_LEN /SAMPLING_RATE)
 #define BOTTOM_BAND           (FS2BAND(BOTTOM_SAMPLING_RATE))
 #define TOP_BAND              (FS2BAND(TOP_SAMPLING_RATE))
 
-#define MS2FRAME(x)           (((x)*SAMPLING_RATE/1000/(FFT_LEN-OVERLAP))+1)
+#define MS2FRAME(x)           (((x)*SAMPLING_RATE/1000/(SIGNAL_LEN -OVERLAP))+1)
 #define LENGTH_FRAME          MS2FRAME(LENGTH_THRESHOLD)
 #define INTERVAL_FRAME        MS2FRAME(INTERVAL_THRESHOLD)
 
@@ -106,7 +97,7 @@ void setup()
   /* receive with non-blocking */
   MP.RecvTimeout(MP_RECV_POLLING);
 
-  FFT.begin();
+  GetPower.begin();
 }
 
 #define RESULT_SIZE 4
@@ -121,20 +112,21 @@ void loop()
 
   result[pos].clear();
 
-  static float pDst[FFT_LEN/2];
+  // static float pDst[SIGNAL_LEN /2];
 
   /* Receive PCM captured buffer from MainCore */
   ret = MP.Recv(&rcvid, &request);
   if (ret >= 0) {
-      FFT.put((q15_t*)request->buffer,request->sample);
+      GetPower.put((q15_t*)request->buffer,request->sample);
   }
-  printf("%d: help\n", request->sample);
 
-  while(!FFT.empty(0)){
+  while(!GetPower.empty(0)){
       result[pos].channel = MAX_CHANNEL_NUM;
     for (int i = 0; i < MAX_CHANNEL_NUM; i++) {
-      FFT.get(pDst,i);
-      result[pos].power[i] = detect_sound(BOTTOM_BAND,TOP_BAND,pDst,i);
+      result[pos].power[i] = GetPower.get(i);
+      
+
+//      if(result[pos].found[i]){ printf("Sub channel %d\n",i); }
     }
     ret = MP.Send(sndid, &result[pos],0);
     pos = (pos+1)%RESULT_SIZE;
@@ -166,30 +158,39 @@ struct Sounds {
   }
 };
 
+float powers[MAX_CHANNEL_NUM] = {0, 0, 0, 0};
 float detect_sound(int bottom, int top, float* pdata, int channel )
 {
   static Sounds sounds;
-  float Power=0;
-  if(bottom > top) return Power;
+  // float Power=0;
+  if(bottom > top) return 0;
 
   if(sounds.interval[channel]> 0){ /* Do not detect in interval time.*/
     sounds.interval[channel]--;
     sounds.continuity[channel]=0;
-    return Power;
+    powers[channel] = 0;
+    return 0;
   }
 
   for(int i=bottom;i<=top;i++){
+//     printf("!!%2.8f\n",*(pdata+i));
     if(*(pdata+i) > POWER_THRESHOLD){ // find sound.
+//      printf("!!%2.8f\n",*(pdata+i));
       sounds.continuity[channel]++;
-      Power+=*(pdata+i);
+      powers[channel]+=*(pdata+i);
     }
   }
 
-  sounds.continuity[channel]=0;
-  if(Power>30){
+  if(sounds.continuity[channel] > LENGTH_FRAME){ // length is enough.
     sounds.interval[channel] = INTERVAL_FRAME;
+    float Power=powers[channel];
+    powers[channel] = 0;
+    return Power;
+  }else{
+    return 0;
   }
-  return Power;
+  sounds.continuity[channel]=0;
+  return 0;
 }
 
 
