@@ -115,7 +115,7 @@ private:
     if (ringbufs[channel]->stored() < SIGNAL_LEN) return 0;
 
     /* Read from the ring buffer */
-    ringbufs[channel]->get(&tmpInBuf[channel][m_overlap], SIGNAL_LEN);
+    ringbufs[channel]->get(&tmpInBuf[channel][0], SIGNAL_LEN);
 
     float out = 0;
     for (int i = 0; i < SIGNAL_LEN; i++) {
