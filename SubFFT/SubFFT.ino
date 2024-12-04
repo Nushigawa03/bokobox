@@ -48,7 +48,7 @@ GetPowerClass<MAX_CHANNEL_NUM, SIGNAL_LEN > GetPower;
 #define INTERVAL_THRESHOLD    100 // 100ms
 
 #define BOTTOM_SAMPLING_RATE  0 // 1kHz
-#define TOP_SAMPLING_RATE     1000 // 1.5kHz
+#define TOP_SAMPLING_RATE     100 // 1.5kHz
 
 #define FS2BAND(x)            ((x)*SIGNAL_LEN /SAMPLING_RATE)
 #define BOTTOM_BAND           (FS2BAND(BOTTOM_SAMPLING_RATE))
@@ -101,6 +101,21 @@ void setup()
 }
 
 #define RESULT_SIZE 4
+struct Sounds {
+  Sounds(){
+    clear();
+  }
+
+  int interval;
+  bool get;
+
+  void clear(){
+    interval=0;
+    get=false;
+  }
+};
+static Sounds sounds;
+float powers[MAX_CHANNEL_NUM] = {0, 0, 0, 0};
 void loop()
 {
   int      ret;
@@ -112,7 +127,7 @@ void loop()
 
   result[pos].clear();
 
-  // static float pDst[SIGNAL_LEN /2];
+  static float pDst[SIGNAL_LEN /2];
 
   /* Receive PCM captured buffer from MainCore */
   ret = MP.Recv(&rcvid, &request);
@@ -122,11 +137,13 @@ void loop()
 
   while(!GetPower.empty(0)){
       result[pos].channel = MAX_CHANNEL_NUM;
+      get_power();
     for (int i = 0; i < MAX_CHANNEL_NUM; i++) {
-      result[pos].power[i] = GetPower.get(i);
-      
-
-//      if(result[pos].found[i]){ printf("Sub channel %d\n",i); }
+      if (sounds.get) {
+        result[pos].power[i] = powers[i];
+      } else {
+        result[pos].power[i] = 0;
+      }
     }
     ret = MP.Send(sndid, &result[pos],0);
     pos = (pos+1)%RESULT_SIZE;
@@ -142,57 +159,25 @@ void loop()
 /*
  * Detector functions
  */
-struct Sounds {
-  Sounds(){
-    clear();
-  }
 
-  int continuity[MAX_CHANNEL_NUM];
-  int interval[MAX_CHANNEL_NUM];
-
-  void clear(){
-    for(int i=0;i<MAX_CHANNEL_NUM;i++){
-      continuity[i]=0;
-      interval[i]=0;
-    }
-  }
-};
-
-float powers[MAX_CHANNEL_NUM] = {0, 0, 0, 0};
-float detect_sound(int bottom, int top, float* pdata, int channel )
+void get_power()
 {
-  static Sounds sounds;
-  // float Power=0;
-  if(bottom > top) return 0;
-
-  if(sounds.interval[channel]> 0){ /* Do not detect in interval time.*/
-    sounds.interval[channel]--;
-    sounds.continuity[channel]=0;
-    powers[channel] = 0;
-    return 0;
+  for (int i = 0; i < MAX_CHANNEL_NUM; i++) {
+    powers[i] = GetPower.get(i);
   }
-
-  for(int i=bottom;i<=top;i++){
-//     printf("!!%2.8f\n",*(pdata+i));
-    if(*(pdata+i) > POWER_THRESHOLD){ // find sound.
-//      printf("!!%2.8f\n",*(pdata+i));
-      sounds.continuity[channel]++;
-      powers[channel]+=*(pdata+i);
+  if(sounds.interval> 0){ /* Do not detect in interval time.*/
+    sounds.interval--;
+    sounds.get = false;
+  } else {
+    for (int i = 0; i < MAX_CHANNEL_NUM; i++) {
+      if (powers[i] > POWER_THRESHOLD) {
+        sounds.get = true;
+        sounds.interval = INTERVAL_FRAME;
+        break;
+      }
     }
   }
-
-  if(sounds.continuity[channel] > LENGTH_FRAME){ // length is enough.
-    sounds.interval[channel] = INTERVAL_FRAME;
-    float Power=powers[channel];
-    powers[channel] = 0;
-    return Power;
-  }else{
-    return 0;
-  }
-  sounds.continuity[channel]=0;
-  return 0;
 }
-
 
 void errorLoop(int num)
 {

@@ -20,6 +20,8 @@
 #include <MP.h>
 #include <Audio.h>
 
+#define POWER_THRESHOLD       3
+
 AudioClass *theAudio;
 
 /* Select mic channel number */
@@ -113,7 +115,7 @@ void loop()
             c=i;
           }
         }
-        if(max_power>10){
+        if(max_power>POWER_THRESHOLD){
           for (int i=0;i<4;i++) {
             float power = result->power[i];
             printf("%f ", result->power[i]);
