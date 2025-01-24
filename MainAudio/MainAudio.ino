@@ -76,6 +76,8 @@ void setup()
   theAudio->startRecorder();
 }
 
+const float calibrationFactors[4] = {75.0, 150.0, 125.0, 150.0};
+
 void loop()
 {
   int8_t   sndid = 100; /* user-defined msgid */
@@ -118,7 +120,7 @@ void loop()
         if(max_power>POWER_THRESHOLD){
           for (int i=0;i<4;i++) {
             float power = result->power[i];
-            printf("%f ", result->power[i]);
+            printf("%f ", power);
           }
           printf("\n");
       }

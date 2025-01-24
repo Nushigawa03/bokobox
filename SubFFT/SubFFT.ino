@@ -34,7 +34,7 @@
 
 #define SAMPLING_RATE   48000 // ex.) 48000, 16000
 
-#define SIGNAL_LEN          1024 // ex.) 128, 256, 1024
+#define SIGNAL_LEN          512 // ex.) 128, 256, 1024
 #define OVERLAP             0  // ex.) 0, 128, 256
 
 GetPowerClass<MAX_CHANNEL_NUM, SIGNAL_LEN > GetPower;
@@ -44,18 +44,9 @@ GetPowerClass<MAX_CHANNEL_NUM, SIGNAL_LEN > GetPower;
  * Detector parameters
  */
 #define POWER_THRESHOLD       3  // Power
-#define LENGTH_THRESHOLD      20  // 20ms
 #define INTERVAL_THRESHOLD    100 // 100ms
 
-#define BOTTOM_SAMPLING_RATE  0 // 1kHz
-#define TOP_SAMPLING_RATE     100 // 1.5kHz
-
-#define FS2BAND(x)            ((x)*SIGNAL_LEN /SAMPLING_RATE)
-#define BOTTOM_BAND           (FS2BAND(BOTTOM_SAMPLING_RATE))
-#define TOP_BAND              (FS2BAND(TOP_SAMPLING_RATE))
-
 #define MS2FRAME(x)           (((x)*SAMPLING_RATE/1000/(SIGNAL_LEN -OVERLAP))+1)
-#define LENGTH_FRAME          MS2FRAME(LENGTH_THRESHOLD)
 #define INTERVAL_FRAME        MS2FRAME(INTERVAL_THRESHOLD)
 
 /*-----------------------------------------------------------------*/
