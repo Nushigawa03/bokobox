@@ -1,8 +1,11 @@
+import os
 import serial
 import time
 import threading
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import keyboard
+import configparser
 
 import numpy as np
 
@@ -27,10 +30,18 @@ microphone_positions = [
 reference_positions = [
     (0, 0), (0.5, 0), (0.5, 0.5), (0, 0.5), (-0.5, 0.5), (-0.5, 0), (-0.5, -0.5), (0, -0.5), (0.5, -0.5)
 ]
-calibration_factors = [20.0, 50.0, 10.0, 15.0]  # LEN=256
-calibration_factors = [50.0, 80.0, 50.0, 20.0]  # LEN=1024
-# positive_calibration_factors = [50.0, 80.0, 50.0, 20.0]  # LEN=1024
-# negative_calibration_factors = [20.0, 40.0, 50.0, 10.0]  # LEN=1024
+# 設定ファイルのパスを取得
+config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
+
+# 設定ファイルからcalibration_factorsを読み込む
+config = configparser.ConfigParser()
+config.read(config_path)
+
+try:
+    calibration_factors = list(map(float, config['Calibration']['factors'].split(',')))
+except KeyError as e:
+    print(f"設定ファイルの読み込みに失敗しました: {e}")
+    calibration_factors = [20.0, 50.0, 10.0, 15.0]  # デフォルト値
 
 # データの送信
 def send_data(data):
@@ -38,25 +49,92 @@ def send_data(data):
 
 # データの受信と変換
 def receive_data():
-    global latest_values
-    global data_received
     global stop_thread
     while not stop_thread:
-        try:
-            if ser.in_waiting > 0:
-                data = ser.readline().decode('utf-8').strip()
-                # print(data)
-                values = [float(x) for x in data.split()]
-                latest_values = values
-                update_data_history(values)
-                means, std_devs = calculate_mean_std(data_history)
-                print_mean_std(means, std_devs)
-                data_received = True
-        except serial.SerialException as e:
-            print(f"Serial error: {e}")
-            break
-        except ValueError:
-            print(data)
+        if current_mode == "graph_update":
+            receive_data_graph_update_mode()
+        else:
+            receive_data_calibration_mode()
+
+current_mode = "graph_update"  # 初期モードをグラフ更新モードに設定
+
+def on_key_event(event):
+    if event.name == 'c':
+        if current_mode != "calibration": enter_calibration_mode()
+    elif event.name == 'g':
+        if current_mode != "graph_update": enter_graph_update_mode()
+# キーボード入力イベントを設定
+keyboard.on_press(on_key_event)
+
+def enter_calibration_mode():
+    global current_mode
+    global current_channel
+    global current_sample
+    current_mode = "calibration"
+    current_channel = 0
+    current_sample = 0
+    print("キャリブレーションモードに入りました")
+
+def enter_graph_update_mode():
+    global current_mode
+    current_mode = "graph_update"
+    print("グラフ更新モードに入りました")
+
+
+current_channel = 0
+current_sample = 0
+num_samples = 5
+num_channels = 4
+samples = np.zeros((num_channels, num_samples))
+def receive_data_calibration_mode():
+    
+    global current_channel
+    global current_sample
+    global calibration_factors
+    try:
+        if ser.in_waiting > 0:
+            data = ser.readline().decode('utf-8').strip()
+            values = [float(x) for x in data.split()]
+            samples[current_channel, current_sample] = values[current_channel]
+            print(f"Channel {current_channel+1}, Sample {current_sample+1}: {values[current_channel]}")
+            current_sample += 1
+            if current_sample >= num_samples:
+                current_sample = 0
+                current_channel += 1
+                if current_channel >= num_channels:
+                    calibration_factors = np.mean(samples, axis=1).tolist()
+                    print(f"Updated calibration factors: {calibration_factors}")
+                    # 設定ファイルを更新
+                    config['Calibration']['factors'] = ','.join(map(str, calibration_factors))
+                    with open(config_path, 'w') as configfile:
+                        config.write(configfile)
+                    print("設定ファイルを更新しました")
+                    enter_graph_update_mode()
+    except serial.SerialException as e:
+        print(f"Serial error: {e}")
+        return -1
+    except ValueError:
+        print(data)
+
+def receive_data_graph_update_mode():
+    global latest_values
+    global data_received
+    try:
+        if ser.in_waiting > 0:
+            data = ser.readline().decode('utf-8').strip()
+            # print(data)
+            values = [float(x) for x in data.split()]
+            latest_values = values
+            update_data_history(values)
+            means, std_devs = calculate_mean_std(data_history)
+            print_mean_std(means, std_devs)
+            data_received = True
+    except serial.SerialException as e:
+        print(f"Serial error: {e}")
+        return -1
+    except ValueError:
+        print(data)
+
 def normalize_radius(radius, positive_calibration, negative_calibration):
     if positive_calibration == negative_calibration:
         raise ValueError("Positive and negative calibration factors must be different.")
@@ -139,6 +217,7 @@ def normalize_to_closest_reference(centroid):
     min_distance_index = np.argmin(distances)
     return reference_positions[min_distance_index]
 
+
 # メイン関数
 def main():
     global stop_thread
@@ -191,12 +270,6 @@ def main():
     ani = animation.FuncAnimation(fig, update, interval=100, cache_frame_data=False)
 
     try:
-        while True:
-            mode = input("Enter mode (c): ").strip().lower()
-            if mode == 'c':
-                calibration_mode()
-            else:
-                print("Invalid mode. Please enter 'a', 'b', 'calibrate', or 'exit'.")
         plt.show()
     except KeyboardInterrupt:
         print("Program interrupted")
@@ -205,20 +278,6 @@ def main():
         ser.close()
         serial_thread.join()
 
-
-def calibration_mode():
-    global calibration_factors
-    directions = ['left', 'up', 'right', 'down']
-    for idx, direction in enumerate(directions):
-        print(f"Calibrating {direction}. Please hit the {direction} button 5 times.")
-        values = []
-        for i in range(5):
-            value = float(input(f"Enter value {i+1} for {direction}: "))
-            values.append(value)
-        mean, _ = calculate_mean_std(values)
-        calibration_factors[idx] = mean
-    print("Calibration complete. Updated calibration factors:")
-    print(calibration_factors)
 
 if __name__ == "__main__":
     main()

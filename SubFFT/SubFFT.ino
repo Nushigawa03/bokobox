@@ -34,7 +34,7 @@
 
 #define SAMPLING_RATE   48000 // ex.) 48000, 16000
 
-#define SIGNAL_LEN          512 // ex.) 128, 256, 1024
+#define SIGNAL_LEN          256 // ex.) 128, 256, 1024
 #define OVERLAP             0  // ex.) 0, 128, 256
 
 GetPowerClass<MAX_CHANNEL_NUM, SIGNAL_LEN > GetPower;
