@@ -24,8 +24,9 @@ ser = serial.Serial(
 latest_values = None
 data_received = False
 stop_thread = False
+POINT_LIFETIME = 3  # 点の寿命を秒単位で設定
 microphone_positions = [
-    (0.5, 0), (0, 0.5), (-0.5, 0), (0, -0.5)
+    1, 3, 5, 7
 ]
 reference_positions = [
     (0, 0), (0.5, 0), (0.5, 0.5), (0, 0.5), (-0.5, 0.5), (-0.5, 0), (-0.5, -0.5), (0, -0.5), (0.5, -0.5)
@@ -74,6 +75,8 @@ def enter_calibration_mode():
     current_channel = 0
     current_sample = 0
     print("キャリブレーションモードに入りました")
+    positions_str = ', '.join([f"P{pos}" for pos in microphone_positions])
+    print(f"{positions_str}を{num_samples}回ずつ叩いてください")
 
 def enter_graph_update_mode():
     global current_mode
@@ -84,7 +87,7 @@ def enter_graph_update_mode():
 current_channel = 0
 current_sample = 0
 num_samples = 5
-num_channels = 4
+num_channels = len(microphone_positions)
 samples = np.zeros((num_channels, num_samples))
 def receive_data_calibration_mode():
     
@@ -153,7 +156,7 @@ def update_circles(frame, ax, circles):
         ax.figure.canvas.draw()
 
 
-# 直前10回のデータを保持するリスト
+# 直前10個のデータを保持するリスト
 data_history = []
 
 def update_data_history(new_values):
@@ -180,9 +183,10 @@ def plot_reference_positions(ax, reference_positions):
 
 def update_pie_chart(ax, values):
     global calibration_factors
+    global microphone_positions
     scaled_values = [value / calibration_factors[i] for i, value in enumerate(values)]
     ax.clear()
-    ax.pie(scaled_values, labels=[f"Channel {i+1}" for i in range(len(scaled_values))], autopct='%1.1f%%')
+    ax.pie(scaled_values, labels=[f"P{x}" for x in microphone_positions], autopct='%1.1f%%')
     ax.figure.canvas.draw()
 
     # 重心を計算
@@ -193,9 +197,9 @@ def update_pie_chart(ax, values):
     return centroid
 
 def calculate_centroid(values):
-    global microphone_positions
+    global microphone_positions, reference_positions
     total = sum(values)
-    weighted_positions = [(x * value, y * value) for (x, y), value in zip(microphone_positions, values)]
+    weighted_positions = [(reference_positions[i][0] * value, reference_positions[i][1] * value) for i, value in zip(microphone_positions, values)]
     centroid_x = sum(x for x, y in weighted_positions) / total
     centroid_y = sum(y for x, y in weighted_positions) / total
     return (centroid_x, centroid_y)
@@ -221,9 +225,10 @@ def normalize_to_closest_reference(centroid):
 # メイン関数
 def main():
     global stop_thread
-    global microphone_positions
-    fig, (ax1, ax2) = plt.subplots(1, 2)
-    circles = [plt.Circle(pos, 0, color='blue') for pos in microphone_positions]
+    global microphone_positions, reference_positions
+    fig = plt.figure("bokobox")
+    ax1, ax2 = fig.add_subplot(121), fig.add_subplot(122)
+    circles = [plt.Circle(reference_positions[pos], 0, color=plt.cm.tab10.colors[i % len(plt.cm.tab10.colors)]) for i, pos in enumerate(microphone_positions)]
     for circle in circles:
         ax1.add_patch(circle)
     ax1.set_xlim(-0.7, 0.7)
@@ -240,32 +245,50 @@ def main():
     # 重心の履歴を保持するリスト
     centroid_history = []
     plotted_points = []
-    colors = ['#FF0000', '#FF4000', '#FF8000', '#FFBF00', '#FFFF00', '#BFFF00', '#80FF00', '#40FF00', '#00FF00', '#00FF40']
+
+    global last_update_time
+    last_update_time = time.time()
+    update_interval = 3
 
     def update(frame):
         global data_received
-        if not data_received:
-            return
+        global last_update_time
+        current_time = time.time()
         
-        update_circles(frame, ax1, circles)
-        if latest_values:
-            centroid = update_pie_chart(ax2, latest_values)
-            centroid = (centroid[0], centroid[1])
-            # 新しい点をプロット
-            point, = ax1.plot(centroid[0], centroid[1], 'o', color=colors[0])
-            centroid_history.append(centroid)
-            plotted_points.append(point)
-                    
-            # リストが10を超えた場合、最も古い点を削除
-            if len(plotted_points) > 10:
-                old_point = plotted_points.pop(0)
-                old_point.remove()
-                centroid_history.pop(0)
-            # プロットされた点の色を更新
-            for i, point in enumerate(plotted_points):
-                point.set_color(colors[max(0, min(len(plotted_points), len(colors)) - 1 - i)])
-            print_centroid_mean_std(centroid_history)
-        data_received = False
+        # POINT_LIFETIME秒以上前の点を削除
+        while centroid_history and current_time - centroid_history[0][0] > POINT_LIFETIME:
+            old_point = plotted_points.pop(0)
+            old_point.remove()
+            centroid_history.pop(0)
+        
+        # プロットされた点の色を更新
+        for i, (timestamp, point) in enumerate(zip(centroid_history, plotted_points)):
+            age = current_time - timestamp[0]
+            alpha = max(0, 1 - age / POINT_LIFETIME)
+            point.set_alpha(alpha)
+        
+        # 描画を更新
+        if data_received:
+            update_circles(frame, ax1, circles)
+            if latest_values:
+                centroid = update_pie_chart(ax2, latest_values)
+                centroid = (centroid[0], centroid[1])
+                point, = ax1.plot(centroid[0], centroid[1], 'o', color=plt.cm.tab10.colors[5], alpha=1.0)
+                centroid_history.append((current_time, centroid))
+                plotted_points.append(point)
+                print_centroid_mean_std([c[1] for c in centroid_history])
+            data_received = False
+            last_update_time = current_time
+        # 円の表示をクリア
+        elif current_time - last_update_time > update_interval:
+            ax2.clear()
+            ax2.pie([1], colors=['gray'], labels=[''], autopct='')
+            for circle in circles:
+                circle.set_radius(0)
+            ax1.figure.canvas.draw()
+            ax2.figure.canvas.draw()
+
+
             
     ani = animation.FuncAnimation(fig, update, interval=100, cache_frame_data=False)
 
