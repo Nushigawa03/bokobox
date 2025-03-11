@@ -35,7 +35,7 @@ python serial_communication/serial_communication.py
 bokobox
 ├── Arduino
 │   ├── MainAudio
-│   ├── SubAudio
+│   └── SubAudio
 ├───serial_communication
 └───resources
     ├── 3d_models
