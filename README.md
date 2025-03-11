@@ -1,6 +1,6 @@
 # Bokobox
 
-[**ProtoPedia記事**](./)
+[**ProtoPedia記事**](https://protopedia.net/prototype/6558)
 ## 概要
 Bokoboxは、Arduinoを使用してマイクの入力を位置とパワーに変換するプロジェクト。メインコアとサブコアを使用して、オーディオデータの収集と解析を行う。また、Pythonを使用してデータの可視化やシリアル通信を行う。
 
